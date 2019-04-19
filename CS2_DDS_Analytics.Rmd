@@ -1,0 +1,357 @@
+---
+title: "Case Study 2_DDS Analytics"
+author: "Audrene Tiakor"
+date: "April 16, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:\\Users\\Audrene\\Desktop\\case study 2")
+```
+
+
+```{r, message=F, warning=F}
+library(dplyr)
+library(Hmisc)
+library(corrplot)
+library(ggplot2)
+library(SmartEDA)
+library(MASS)
+library(tidyverse)
+library(caret)
+library(knitr)
+library(kableExtra)
+library(caTools)
+library(randomForest)
+library(e1071)
+library(pROC)
+```
+#Introduction
+Working with the data science team at DDSAnalytics, our team has been given the assignment to conduct an analysis with existing employee data to identify predicting employee turnover and monthly income for Frito Lay. To effectively identify predicting employee turnover and monthly income, first, exploratory data analysis (EDA) will be used. During exploratory analysis we will assess which variables in the dataset are highly correlated with employee turnover and monthly income. After EDA, predictive models will be constructed using Logistic and Linear Regression Models, Naive Bayes model, and Random Forest Model. Using AIC, RMSE, and the roc function to find the best model, the best model will then be used to predict employee turnover and monthly income. 
+
+```{r,import}
+#Import Train Data
+turnover<-read.csv("CaseStudy2-data.csv", header=TRUE, stringsAsFactors=TRUE)
+kable(turnover %>% head()) %>% kable_styling(turnover, bootstrap_options = "striped", full_width = F, position = "center")
+#Import Test Data
+turntest<-read.csv("CaseStudy2Validation No Attrition.csv", header=TRUE, stringsAsFactors=TRUE)
+kable(turntest) %>% kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+
+```{r,missing}
+#check for missing values
+missing<-ExpData(data=turnover, type=2)
+kable(missing) %>% kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+```{r,overview}
+#See an overview of the data
+overview<-ExpData(data=turnover, type=1)
+kable(overview) %>% kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+#ANALYSIS I: ATTRITION AT FRITO LAY
+##Exploratory Data Analysis (EDA)
+### Target Variable (Attrition) with Categorical Variables
+
+```{r, sum}
+stat_sum<-ExpNumStat(turnover, by="GA", gp="Attrition", Qnt=seq(0,1,0.1), MesofShape=2, Outlier=TRUE, round=2)
+kable(stat_sum) %>% kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+```{r,bp1}
+box_plot<-ExpNumViz(turnover, gp="Attrition", type=1, nlim=NULL, fname=NULL, col=c("pink", "yellow", "orange"),Page=c(2,2),sample=26)
+box_plot
+```
+```{r,cat}
+
+cat_sum<-ExpCTable(turnover, Target="Attrition", margin=1, clim=10, nlim=NULL, round=2, bin=NULL,per=F)
+kable(cat_sum) %>% kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+```{r,assoc}
+assoc<-ExpCatStat(turnover, Target="Attrition",result="Stat", clim=10, nlim=5, Pclass="Yes")
+kable(assoc) %>% kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+```{r,bp2}
+cat_bar_plot<-ExpCatViz(turnover, gp="Attrition", fname=NULL, clim=10, col=NULL, margin=2, Page=c(2,2), sample=35)
+cat_bar_plot
+```
+From the barplots of categorical variables in relation to Attrition, the following discoveries were made:
+
+1. Employees at Frito Lay that traveled frequently were more likely to leave 
+Frito Lay.
+
+2. When analyzing the education field of employees, those who were in the education field in Human Rewources (27%) and Technical Degree(23%) were more likely to leave Frito Lay.
+3. Analyzing the Departments of the employees, those in sales were more likely to leave Frito Lay.
+4. Although the categories of the stock option levels available to employees are ambiguous, those with stock option level 0(26%) and 3(22%) were more likely to leave Frito Lay. 
+5. For training times 0 (17%), 4(22%), and 2(18%) employees were more likely to leave.
+6. For Joblevel we found that the lower the job level (i.e level 1 at 26%) attrition was higher.
+7. For JObRole, those who have the role of Sales representative and Human Resources have higher attrition rates.
+8. Considering the marital status of employees, those who are single have a higher attrition percentage.
+9. Employees with a lower work/life balance, have a higher attrition rate.
+10. For overtime, those that have overtime have a higher attrition rate. 
+11. Those with education level 1-3, have a higher attrition rate.
+12. Those who had a higher number of companies who they work for, visually we see tha the more companies an employee has worked the higher the attriton rate.
+13. Low environment satisfaction has ha higher attrition rate.
+14. For training times, 0 (27%) and 4(22%) have a higher attrition rate. 
+###Target Variable (Attrition) with Categorical Variables
+ 
+```{r, age}
+#Attrition vs Age
+age <- ggplot(turnover,aes(Age,fill=Attrition))+geom_density() + theme(plot.title = element_text(hjust = 0.5)) +  ggtitle("Attrition By Age")
+age
+```
+
+The younger the age group, the more attrition occurs. 
+
+```{r}
+dist <- ggplot(turnover,aes(DistanceFromHome,fill=Attrition))+geom_density() + theme(plot.title = element_text(hjust = 0.5)) +  ggtitle("Attrition By Distance From Home")
+dist
+```
+The further an Employee lives from work, the more likely attrition will occur.
+
+```{r, mon}
+#Attriton vs MonthlyIncome 
+monInc <- ggplot(turnover,aes(MonthlyIncome,fill=Attrition))+geom_density() + theme(plot.title = element_text(hjust = 0.5)) +  ggtitle("Attrition By Monthly Income")
+monInc
+
+```
+The lower the monthly income for an employee at Frito Lay, the more likely attrition will occur.
+```{r}
+PSH <- ggplot(turnover,aes(PercentSalaryHike,fill=Attrition))+geom_density() + theme(plot.title = element_text(hjust = 0.5)) +  ggtitle("Attrition By Percent Salary Hike")
+PSH
+
+```
+Here we can visually see that the lower the percent salary increase, the more likely attrition will not occur, so we will not use PercentSalaryHike as a likely predictor or attrition occurance. 
+
+```{r}
+TWY <- ggplot(turnover,aes(TotalWorkingYears,fill=Attrition))+geom_density() + theme(plot.title = element_text(hjust = 0.5)) +  ggtitle("Attrition In Relation To An Employee's ")
+TWY
+```
+The less years an employee spends working for Frito Lay, the more likely attrition will occur. 
+
+```{r}
+YAC <- ggplot(turnover,aes(YearsAtCompany,fill=Attrition))+geom_density() + theme(plot.title = element_text(hjust = 0.5)) +  ggtitle("Attrition In Relation To An Employee's Years At Company")
+YAC
+```
+The less number of years an employee spends working for Frito Lay, the more likely attrition will occur.
+
+```{r, cR}
+#Attrition vs YearsInCurrentRole
+YCR <- ggplot(turnover,aes(YearsInCurrentRole,fill=Attrition))+geom_density() + theme(plot.title = element_text(hjust = 0.5)) +  ggtitle("Attrition In Relation To An Employee's Time In Current Role")
+YCR
+
+```
+The least number of years and employee spends in their current role, the more likely attrition will occur. 
+```{r, promo}
+#Attrition vs YearsSinceLastPromotion
+ YSLP <- ggplot(turnover,aes(YearsSinceLastPromotion,fill=Attrition))+geom_density() + theme(plot.title = element_text(hjust = 0.5)) +  ggtitle("Attrition By The Number of Years Since Last Promotion")
+YSLP
+
+```
+Visually, we can see that if an employee goes anywhere from 0years to 3years without a promotion, then that attrition is more likely to occur.
+```{r, CM}
+#Attrition vs YearsWithCurrentManager 
+YWCM <- ggplot(turnover,aes(YearsWithCurrManager,fill=Attrition))+geom_density() + theme(plot.title = element_text(hjust = 0.5)) +  ggtitle("Attrition By Monthly Income")
+YWCM
+``` 
+The least amount of years an employee spends with the current manager, the more likely for attrition to occur.
+
+After exploring each variable in relation to attrition, using Logistic Regression, Naive Bayes, and Random Forest Regressor, a model will be built using the training set, then the test set will be used to predict attrition. The predictors that will be used are Age, BusinessTravel, Department, EducationField,Education, Gender, JobRole, MaritalStatus, OverTime, DistanceFromHome, MonthlyIncome, RelationshipSatisfaction, TrainingTimesLastYear, TotalWorkingYears, WorkLifeBalance, YearsAtCompany,
+YearsInCurrentRole, YearsSinceLastPromotion, YearsWithCurrManager, and StockOptionLevel (20 Predictors).
+
+##Building Predictive Model For Attrition
+After exploring each variable in relation to attrition, using Logistic Regression, Naive Bayes, and Random Forest Regressor, a model will be built using the training set, then the test set will be used to predict attrition.Possible predictors that could be used (after EDA) are Age, BusinessTravel, Department, EducationField,Education, Gender, JobRole, MaritalStatus, OverTime, DistanceFromHome, MonthlyIncome, RelationshipSatisfaction, TrainingTimesLastYear, TotalWorkingYears, WorkLifeBalance, YearsAtCompany,
+YearsInCurrentRole, YearsSinceLastPromotion, YearsWithCurrManager, and StockOptionLevel (20 Predictors).
+
+###Building Test/Train Set
+```{r}
+#Deleting columns not needed and Variables that are factors with 1 level
+drop<-c("Over18", "DailyRate", "EmployeeCount", "EmployeeNumber", "HourlyRate", "MonthlyRate", "StandardHours", "Rand")
+
+turnover2<-turnover[,!(names(turnover) %in% drop)]
+
+set.seed(222)
+split = sample.split(turnover2$Attrition, SplitRatio = 0.7)
+turn.train = subset(turnover2, split == TRUE)
+turn.test = subset(turnover2, split == FALSE)
+
+table(turn.train$Attrition) %>% prop.table()
+
+table(turn.test$Attrition) %>% prop.table()
+
+```
+
+###Correlation Plot
+```{r}
+turn.train %>%
+  filter(Attrition == "Yes") %>%
+  select_if(is.numeric) %>%
+  cor() %>%
+  corrplot::corrplot()
+```
+###Logistic Regression
+For Logistic Regression, forward, backward, and stepwise selection will be used for variable selection to find the best predictive model.
+####Full Model
+```{r}
+full<-glm(Attrition~., family= binomial, data=turn.train)
+summary(full)
+full$anova
+
+```
+
+####Logistic Regression: Predictive Model By (Forward Selection)
+```{r}
+forward<-stepAIC(full, direction="forward", trace=FALSE)
+summary(forward)
+forward$anova
+```
+Note: The AIC is 363.51
+####Logistic Regression: Predictive Model By (Backward Elimination)
+```{r}
+backward<-stepAIC(full, direction="backward", trace=FALSE)
+summary(backward)
+backward$anova
+```
+Note: The AIC is 342.64
+####Logistic Regression: Predictive Model By (Stepwise Selection)
+```{r}
+step<-stepAIC(full, trace=FALSE)
+summary(step)
+step$anova
+```
+Note: The AIC is 342.64
+Here we want the model with the smallest AIC, the predictive model by stepwise selection will be chosen.To increase the accuracy and sensitivity of the best chosen model, the roc function will be used to find the best classifier threshold.
+
+###Finding the Best Classifier Threshold to Compare Full and Stepwise model
+####Full Model
+```{r}
+#finding the best classifier threshold for full model
+predict_full <- predict(full,newdata = turn.test,type = 'response')
+roc_full<-roc(turn.test$Attrition, predict_full)
+roc_full
+plot(roc_full)
+res_full<-ifelse(predict_full > 0.17, "Yes", "No")
+confusionMatrix(as.factor(res_full), turn.test$Attrition)
+```
+
+####Stepwise Model
+```{r}
+#finding the best classifier threshold for stepwise model
+predict_step<- predict(step,newdata = turn.test,type = 'response')
+roc_step<-roc(turn.test$Attrition, predict_step)
+roc_step
+coords(roc_step, "all", ret="threshold")
+plot(roc_step)
+res_step<-ifelse(predict_step > 0.23, "Yes", "No")
+confusionMatrix(as.factor(res_step), turn.test$Attrition)
+```
+
+###Naive Bayes Model
+```{r}
+NB_Model=naiveBayes( Attrition~., data=turn.train)
+#Summary of model
+NB_Model
+#Prediction on the dataset
+preds=predict(NB_Model,turn.test)
+roc_NB<-roc(turn.test$Attrition, as.numeric(preds))
+roc_NB
+plot(roc_NB)
+coords(roc_NB, "all", ret="threshold")
+confusionMatrix(table(preds,turn.test$Attrition))
+```
+
+###Random Forest
+```{r}
+forest_model<-randomForest(Attrition~., data=turn.train)
+#Summary of model
+forest_model
+pred_rf <- predict(forest_model, turn.test)
+roc_rf<-roc(turn.test$Attrition, as.numeric(pred_rf))
+roc_rf
+plot(roc_rf)
+coords(roc_rf, "all", ret="threshold")
+confusionMatrix(table(pred_rf,turn.test$Attrition))
+```
+###Predicting Attrition With Best Model (Stepwise Model)
+Here the stepwise Predictive Model has a higher accuracy, so it will be used for predictions.
+```{r}
+#Output Dataset using the Step Wise Model since it was the best
+predictions<-merge(turn.test$ID, predict_step)
+final_pred<-as.data.frame(predictions)
+res_step_final<-ifelse(predict_step > 0.23, "Yes", "No")
+names(final_pred)<-c("ID", "Attrition")
+final_pred$Attrition<-res_step_final
+write.csv(final_pred,"C:\\Users\\Audrene\\Desktop\\case study 2/ATiakor_DDSCaseStudy2_Predict.csv",row.names = FALSE)
+```
+
+#ANALYSIS II: MONTHLY INCOME
+
+To build a predictive model for Monthly Income, a linear regression model will be constucted using variable selection.
+## Exploratory Data Analysis (EDA): Monthly Income
+```{r}
+ggplot(turnover, aes(x=MonthlyIncome, y=TotalWorkingYears)) + geom_point()
+```
+There is a positive correlation between monthly income and the number of years an employee has worked at Frito Lay.
+
+```{r}
+ggplot(turnover, aes(x=MonthlyIncome, y=YearsAtCompany)) + geom_point()
+```
+```{r}
+ggplot(turnover, aes(x=MonthlyIncome, y=YearsSinceLastPromotion)) + geom_point()
+```
+```{r}
+ggplot(turnover, aes(x=MonthlyIncome, y=JobLevel)) + geom_point()
+```
+As the job level increases so does the monthly income. 
+
+```{r}
+ggplot(turnover, aes(x=MonthlyIncome, y=Education)) + geom_point()
+```
+###Full Model
+```{r}
+full_inc_model<-lm(MonthlyIncome~., data=turn.train)
+preds_inc_model<-predict(full_inc_model, turn.test)
+```
+####Forward Prediction Model
+```{r}
+#forward selection
+for_inc<-stepAIC(full_inc_model, direction="forward", trace=FALSE)
+summary(for_inc)
+pred_for<-predict(for_inc, turn.test)
+RMSE_for<-RMSE(pred_for, turn.test$MonthlyIncome)
+for_inc$anova
+```
+####Backward Prediction Model
+```{r}
+#backward selection
+back_inc<-stepAIC(full_inc_model, direction="backward", trace=FALSE)
+summary(back_inc)
+pred_back<-predict(back_inc, turn.test)
+RMSE_back<-RMSE(pred_back, turn.test$MonthlyIncome)
+RMSE_back
+back_inc$anova
+```
+####Stepwise Prediction Model
+```{r}
+#stepwise selection
+step_inc<-stepAIC(full_inc_model, trace=FALSE)
+summary(step_inc)
+pred_step<-predict(step_inc, turn.test)
+RMSE_step<-RMSE(pred_step, turn.test$MonthlyIncome)
+RMSE_step
+step_inc$anova
+```
+Here the stepwise predictive model has the smallest AIC and RMSE, so the stepwise predictive model will be used to predict monthly income.
+###Predicting Attrition With Best Model (Stepwise Model)
+```{r}
+#Output Dataset using the Step Wise Model since it was the best
+pred_minc<-merge(turn.test$ID, pred_step)
+final_mon_pred<-as.data.frame(pred_minc)
+names(final_mon_pred)<-c("ID", "MonthlyIncome")
+final_mon_pred$MonthlyIncome<-pred_step
+write.csv(final_mon_pred,"C:\\Users\\Audrene\\Desktop\\case study 2/ATiakor_DDSCaseStudy2_Predictions_Salary.csv",row.names = FALSE)
+```
+#Conclusion
+In conclusion, when predicting attrition the logistic regressin model, Naive Bayes model, and Random Forest regressor model were built. Out of all three, the logistic regression model performed the best with an accuracy of 80%, sensitivity of 84% and specificity of 62%. For predicting monthly income the step wise linear regression prediction model performed the best with the lowest RMSE and AIC. Being able to find the factors that contribute to attrition, allow the talent management to implement programs such as employee training programs, to identify high-potential employees and reducing/preventing voluntary employee turnover (attrition). 
+
+Github:https://github.com/atiakor0/CaseStudy2-DDSAnalytics.git
+Screencast: http://www.screencast.com/t/zTCbtGUUqh
